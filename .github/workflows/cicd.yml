@@ -13,6 +13,7 @@ jobs:
   # Job 1: Construir y subir la imagen a Docker Hub
   build-and-push:
     runs-on: ubuntu-latest
+    environment: dev
     steps:
       - uses: actions/checkout@v4
 
@@ -81,4 +82,3 @@ jobs:
         run: |
           kubectl get pods -n dev
           kubectl get svc -n dev
-          
