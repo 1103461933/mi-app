@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: CI/CD Pipeline (DEV only)
 
 on:
   push:
@@ -31,9 +31,8 @@ jobs:
           context: .
           push: true
           tags: |
+            ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:dev-latest
             ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:dev-${{ github.sha }}
-            ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:staging-${{ github.sha }}
-            ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:prod-${{ github.sha }}
 
   # Job 2: Desplegar a DEV (con WIF para GCP)
   deploy-dev:
@@ -41,10 +40,10 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: dev
-      url: https://dev.mi-app.com
+      url: https://dev.mi-app.com  # Opcional: reemplaza con tu URL
     permissions:
       contents: read
-      id-token: write  # ← Necesario para WIF
+      id-token: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -63,9 +62,9 @@ jobs:
         uses: google-github-actions/get-gke-credentials@v2
         with:
           cluster_name: dev-cluster
-          location: us-east1
+          location: us-east1-c
 
-      - name: Update dev values
+      - name: Update dev values in infra repo
         env:
           GH_PAT: ${{ secrets.INFRA_GIT_PAT }}
         run: |
@@ -82,99 +81,3 @@ jobs:
         run: |
           kubectl get pods -n dev
           kubectl get svc -n dev
-
-  # Job 3: Desplegar a STAGING
-  deploy-staging:
-    needs: deploy-dev
-    runs-on: ubuntu-latest
-    environment:
-      name: staging
-      url: https://staging.mi-app.com
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Authenticate to Google Cloud
-        id: auth
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-          service_account: github-actions-sa@gcloud-learn-498622.iam.gserviceaccount.com
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Get GKE credentials
-        uses: google-github-actions/get-gke-credentials@v2
-        with:
-          cluster_name: dev-cluster
-          location: us-east1
-
-      - name: Update staging values
-        env:
-          GH_PAT: ${{ secrets.INFRA_GIT_PAT }}
-        run: |
-          git clone https://x-access-token:${GH_PAT}@github.com/1103461933/mi-app-infra.git
-          cd mi-app-infra
-          sed -i "s|tag:.*|tag: staging-${{ github.sha }}|" helm/mi-app/values-staging.yaml
-          git config user.name "GitHub Actions"
-          git config.user.email "actions@github.com"
-          git add helm/mi-app/values-staging.yaml
-          git commit -m "Update staging to ${{ github.sha }} [skip ci]"
-          git push
-
-      - name: Verify deployment
-        run: |
-          kubectl get pods -n staging
-          kubectl get svc -n staging
-
-  # Job 4: Desplegar a PROD (con aprobación manual)
-  deploy-prod:
-    needs: deploy-staging
-    runs-on: ubuntu-latest
-    environment:
-      name: prod
-      url: https://mi-app.com
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Authenticate to Google Cloud
-        id: auth
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-          service_account: github-actions-sa@gcloud-learn-498622.iam.gserviceaccount.com
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Get GKE credentials
-        uses: google-github-actions/get-gke-credentials@v2
-        with:
-          cluster_name: dev-cluster
-          location: us-east1
-
-      - name: Update prod values
-        env:
-          GH_PAT: ${{ secrets.INFRA_GIT_PAT }}
-        run: |
-          git clone https://x-access-token:${GH_PAT}@github.com/1103461933/mi-app-infra.git
-          cd mi-app-infra
-          sed -i "s|tag:.*|tag: prod-${{ github.sha }}|" helm/mi-app/values-prod.yaml
-          git config user.name "GitHub Actions"
-          git config.user.email "actions@github.com"
-          git add helm/mi-app/values-prod.yaml
-          git commit -m "Update prod to ${{ github.sha }} [skip ci]"
-          git push
-
-      - name: Verify deployment
-        run: |
-          kubectl get pods -n prod
-          kubectl get svc -n prod
